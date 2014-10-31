@@ -29,6 +29,8 @@
 
 #include "picturestr.h"
 
+#include "xf86Crtc.h"
+
 /*
  * Driver data structures.
  */
@@ -166,6 +168,94 @@ dummySetup(pointer module, pointer opts, int *errmaj, int *errmin)
 #endif /* XFree86LOADER */
 
 static Bool
+dummy_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
+{
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "resize\n");
+
+    /* Guard against invalid parameters */
+    if (width == 0 || height == 0 ||
+        width > DUMMY_MAX_WIDTH || height > DUMMY_MAX_HEIGHT)
+        return FALSE;
+
+    /* videoRam is in kb, divide first to avoid 32-bit int overflow */
+    if ((width*height+1023)/1024*pScrn->bitsPerPixel/8 > pScrn->videoRam)
+        return FALSE;
+
+    pScrn->virtualX = width;
+    pScrn->virtualY = height;
+    return TRUE;
+}
+
+static const xf86CrtcConfigFuncsRec dummy_xf86crtc_config_funcs = {
+    dummy_xf86crtc_resize
+};
+
+static xf86OutputStatus
+dummy_output_detect(xf86OutputPtr output)
+{
+    return XF86OutputStatusConnected;
+}
+
+int dummy_output_mode_valid(xf86OutputPtr output, DisplayModePtr pMode) {
+    return MODE_OK;
+}
+
+static DisplayModePtr
+dummy_output_get_modes(xf86OutputPtr output)
+{
+    DisplayModePtr modes = NULL;
+
+    return modes;
+
+#if XORG_VERSION_CURRENT >= XORG_VERSION_NUMERIC(1,6,99,0,0)
+    modes = xf86GetDefaultModes();
+#else
+    modes = xf86GetDefaultModes(0,0);
+#endif
+
+    xf86ValidateModesSize(output->scrn, modes, DUMMY_MAX_WIDTH, DUMMY_MAX_HEIGHT, 0);
+    xf86PruneInvalidModes(output->scrn, &modes, FALSE);
+
+    return modes;
+}
+
+static void
+dummy_output_dpms(xf86OutputPtr output, int dpms)
+{
+    return;
+}
+
+static const xf86OutputFuncsRec dummy_output_funcs = {
+	.detect = dummy_output_detect,
+	.mode_valid = dummy_output_mode_valid,
+	.get_modes = dummy_output_get_modes,
+	.dpms = dummy_output_dpms,
+};
+
+static Bool
+dummy_crtc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode,
+			  Rotation rotation, int x, int y)
+{
+	crtc->mode = *mode;
+	crtc->x = x;
+	crtc->y = y;
+	crtc->rotation = rotation;
+
+	return TRUE;
+}
+
+static void
+dummy_crtc_dpms(xf86CrtcPtr output, int dpms)
+{
+    return;
+}
+
+static const xf86CrtcFuncsRec dummy_crtc_funcs = {
+	.set_mode_major = dummy_crtc_set_mode_major,
+	.dpms = dummy_crtc_dpms,
+};
+
+static Bool
 DUMMYGetRec(ScrnInfoPtr pScrn)
 {
     /*
@@ -274,6 +364,8 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
     DUMMYPtr dPtr;
     int maxClock = 300000;
     GDevPtr device = xf86GetEntityInfo(pScrn->entityList[0])->device;
+    xf86OutputPtr output;
+    xf86CrtcPtr crtc;
 
     if (flags & PROBE_DETECT) 
 	return TRUE;
@@ -283,6 +375,8 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
 	return FALSE;
     }
     
+    pScrn->displayWidth = 640;	/* default it */
+
     dPtr = DUMMYPTR(pScrn);
 
     pScrn->chipset = (char *)xf86TokenToString(DUMMYChipsets,
@@ -338,13 +432,6 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
     if (!xf86SetDefaultVisual(pScrn, -1)) 
 	return FALSE;
 
-    if (pScrn->depth > 1) {
-	Gamma zeros = {0.0, 0.0, 0.0};
-
-	if (!xf86SetGamma(pScrn, zeros))
-	    return FALSE;
-    }
-
     xf86CollectOptions(pScrn, device->options);
     /* Process the options */
     if (!(dPtr->Options = malloc(sizeof(DUMMYOptions))))
@@ -364,7 +451,7 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
 	xf86DrvMsg(pScrn->scrnIndex, X_PROBED, "VideoRAM: %d kByte\n",
 		   pScrn->videoRam);
     }
-    
+
     if (device->dacSpeeds[0] != 0) {
 	maxClock = device->dacSpeeds[0];
 	xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Max Clock: %d kHz\n",
@@ -374,60 +461,37 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
 		   maxClock);
     }
 
-    pScrn->progClock = TRUE;
-    /*
-     * Setup the ClockRanges, which describe what clock ranges are available,
-     * and what sort of modes they can be used for.
-     */
-    clockRanges = (ClockRangePtr)xnfcalloc(sizeof(ClockRange), 1);
-    clockRanges->next = NULL;
-    clockRanges->ClockMulFactor = 1;
-    clockRanges->minClock = 11000;   /* guessed §§§ */
-    clockRanges->maxClock = maxClock;
-    clockRanges->clockIndex = -1;		/* programmable */
-    clockRanges->interlaceAllowed = TRUE; 
-    clockRanges->doubleScanAllowed = TRUE;
+    xf86CrtcConfigInit(pScrn, &dummy_xf86crtc_config_funcs);
 
-    /* Subtract memory for HW cursor */
+    xf86CrtcSetSizeRange(pScrn, 256, 256, DUMMY_MAX_WIDTH, DUMMY_MAX_HEIGHT);
 
+    crtc = xf86CrtcCreate(pScrn, &dummy_crtc_funcs);
 
-    {
-	int apertureSize = (pScrn->videoRam * 1024);
-	i = xf86ValidateModes(pScrn, pScrn->monitor->Modes,
-			      pScrn->display->modes, clockRanges,
-			      NULL, 256, DUMMY_MAX_WIDTH,
-			      (8 * pScrn->bitsPerPixel),
-			      128, DUMMY_MAX_HEIGHT, pScrn->display->virtualX,
-			      pScrn->display->virtualY, apertureSize,
-			      LOOKUP_BEST_REFRESH);
+    output = xf86OutputCreate (pScrn, &dummy_output_funcs, "default");
 
-       if (i == -1)
-           RETURN;
+    output->mm_width = 233;
+    output->mm_height = 233;
+    output->possible_crtcs = 0x7f;
+
+    xf86InitialConfiguration(pScrn, TRUE);
+
+    if (pScrn->depth > 1) {
+	Gamma zeros = {0.0, 0.0, 0.0};
+
+	if (!xf86SetGamma(pScrn, zeros))
+	    return FALSE;
     }
 
-    /* Prune the modes marked as invalid */
-    xf86PruneDriverModes(pScrn);
-
-    if (i == 0 || pScrn->modes == NULL) {
+    if (pScrn->modes == NULL) {
 	xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "No valid modes found\n");
 	RETURN;
     }
 
-    /*
-     * Set the CRTC parameters for all of the modes based on the type
-     * of mode, and the chipset's interlace requirements.
-     *
-     * Calling this is required if the mode->Crtc* values are used by the
-     * driver and if the driver doesn't provide code to set them.  They
-     * are not pre-initialised at all.
-     */
-    xf86SetCrtcForModes(pScrn, 0); 
- 
     /* Set the current mode to the first in the list */
     pScrn->currentMode = pScrn->modes;
 
-    /* Print the list of modes being used */
-    xf86PrintModes(pScrn);
+    /* Set default mode (FIXME: I'm not sure why/if I should do that...) */
+    crtc->funcs->set_mode_major(crtc, pScrn->currentMode, RR_Rotate_0, 0, 0);
 
     /* If monitor resolution is set on the command line, use it */
     xf86SetDpi(pScrn, 0, 0);
@@ -453,6 +517,10 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
 static Bool
 DUMMYEnterVT(VT_FUNC_ARGS_DECL)
 {
+    SCRN_INFO_PTR(arg);
+    
+    DUMMYAdjustFrame(ADJUST_FRAME_ARGS(pScrn, pScrn->frameX0, pScrn->frameY0));
+
     return TRUE;
 }
 
@@ -533,6 +601,8 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
 
     if (!miSetPixmapDepths ()) return FALSE;
 
+    pScrn->displayWidth = pScrn->virtualX;
+
     /*
      * Call the framebuffer layer's ScreenInit function, and fill in other
      * pScreen fields.
@@ -610,6 +680,9 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
 			     | CMAP_RELOAD_ON_MODE_SWITCH))
 	return FALSE;
 
+    if (!xf86CrtcScreenInit(pScreen))
+        return FALSE;
+
     pScreen->SaveScreen = DUMMYSaveScreen;
 
     
@@ -633,7 +706,8 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
 Bool
 DUMMYSwitchMode(SWITCH_MODE_ARGS_DECL)
 {
-    return TRUE;
+    SCRN_INFO_PTR(arg);
+    return xf86SetSingleMode(pScrn, mode, RR_Rotate_0);
 }
 
 /* Mandatory */
