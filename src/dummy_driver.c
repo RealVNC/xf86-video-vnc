@@ -168,7 +168,7 @@ dummySetup(pointer module, pointer opts, int *errmaj, int *errmin)
 #endif /* XFree86LOADER */
 
 static Bool
-dummy_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
+size_valid(ScrnInfoPtr pScrn, int width, int height)
 {
     /* Guard against invalid parameters */
     if (width == 0 || height == 0 ||
@@ -179,9 +179,19 @@ dummy_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
     if ((width*height+1023)/1024*pScrn->bitsPerPixel/8 > pScrn->videoRam)
         return FALSE;
 
-    pScrn->virtualX = width;
-    pScrn->virtualY = height;
     return TRUE;
+}
+
+static Bool
+dummy_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
+{
+    if (size_valid(pScrn, width, height)) {
+        pScrn->virtualX = width;
+        pScrn->virtualY = height;
+        return TRUE;
+    } else {
+        return FALSE;
+    }
 }
 
 static const xf86CrtcConfigFuncsRec dummy_xf86crtc_config_funcs = {
@@ -197,7 +207,11 @@ dummy_output_detect(xf86OutputPtr output)
 static int
 dummy_output_mode_valid(xf86OutputPtr output, DisplayModePtr pMode)
 {
-    return MODE_OK;
+    if (size_valid(output->scrn, pMode->HDisplay, pMode->VDisplay)) {
+        return MODE_OK;
+    } else {
+        return MODE_MEM;
+    }
 }
 
 static DisplayModePtr
