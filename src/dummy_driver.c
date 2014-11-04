@@ -185,9 +185,29 @@ size_valid(ScrnInfoPtr pScrn, int width, int height)
 static Bool
 dummy_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
 {
+    int old_width, old_height;
+
+    old_width = pScrn->virtualX;
+    old_height = pScrn->virtualY;
+
     if (size_valid(pScrn, width, height)) {
+        PixmapPtr rootPixmap;
+        ScreenPtr pScreen = pScrn->pScreen;
+
         pScrn->virtualX = width;
         pScrn->virtualY = height;
+
+        rootPixmap = pScreen->GetScreenPixmap(pScreen);
+        if (!pScreen->ModifyPixmapHeader(rootPixmap, width, height,
+                                         -1, -1, -1, NULL)) {
+            pScrn->virtualX = old_width;
+            pScrn->virtualY = old_height;
+            return FALSE;
+        }
+
+        pScrn->displayWidth = rootPixmap->devKind /
+            (rootPixmap->drawable.bitsPerPixel / 8);
+
         return TRUE;
     } else {
         return FALSE;
