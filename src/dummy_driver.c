@@ -663,23 +663,6 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
     if (dPtr->swCursor)
 	xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Using Software Cursor.\n");
 
-    {
-
-	 
-	BoxRec AvailFBArea;
-	int lines = pScrn->videoRam * 1024 /
-	    (pScrn->displayWidth * (pScrn->bitsPerPixel >> 3));
-	AvailFBArea.x1 = 0;
-	AvailFBArea.y1 = 0;
-	AvailFBArea.x2 = pScrn->displayWidth;
-	AvailFBArea.y2 = lines;
-	xf86InitFBManager(pScreen, &AvailFBArea); 
-	
-	xf86DrvMsg(pScrn->scrnIndex, X_INFO, 
-		   "Using %i scanlines of offscreen memory \n"
-		   , lines - pScrn->virtualY);
-    }
-
     xf86SetBackingStore(pScreen);
     xf86SetSilkenMouse(pScreen);
 	
