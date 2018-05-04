@@ -542,9 +542,6 @@ DUMMYEnterVT(VT_FUNC_ARGS_DECL)
 {
     SCRN_INFO_PTR(arg);
     
-    if(!dummyModeInit(pScrn, pScrn->currentMode))
-      return FALSE;
-
     DUMMYAdjustFrame(ADJUST_FRAME_ARGS(pScrn, pScrn->frameX0, pScrn->frameY0));
 
     return TRUE;
@@ -715,8 +712,7 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
 Bool
 DUMMYSwitchMode(SWITCH_MODE_ARGS_DECL)
 {
-    SCRN_INFO_PTR(arg);
-    return dummyModeInit(pScrn, mode);
+    return TRUE;
 }
 
 /* Mandatory */
