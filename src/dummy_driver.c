@@ -75,6 +75,7 @@ static Bool	dummyDriverFunc(ScrnInfoPtr pScrn, xorgDriverFuncOp op,
 
 #define DUMMY_MAX_WIDTH 32767
 #define DUMMY_MAX_HEIGHT 32767
+#define DUMMY_MAX_OUTPUTS 10
 
 /*
  * This is intentionally screen-independent.  It indicates the binding
@@ -108,11 +109,13 @@ static SymTabRec DUMMYChipsets[] = {
 };
 
 typedef enum {
-    OPTION_SW_CURSOR
+    OPTION_SW_CURSOR,
+    OPTION_NUM_OUTPUTS
 } DUMMYOpts;
 
 static const OptionInfoRec DUMMYOptions[] = {
-    { OPTION_SW_CURSOR,	"SWcursor",	OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_SW_CURSOR,	  "SWcursor",	OPTV_BOOLEAN,	{0}, FALSE },
+    { OPTION_NUM_OUTPUTS, "NumOutputs",	OPTV_INTEGER,	{0}, FALSE },
     { -1,                  NULL,           OPTV_NONE,	{0}, FALSE }
 };
 
@@ -198,8 +201,15 @@ dummy_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
         pScrn->virtualY = height;
 
         rootPixmap = pScreen->GetScreenPixmap(pScreen);
-        if (!pScreen->ModifyPixmapHeader(rootPixmap, width, height,
-                                         -1, -1, -1, NULL)) {
+
+	void* pixels = NULL;
+	/* XXX We can actually reallocate the pixels here, saving some RAM!
+	pixels = rootPixmap->devPrivate.ptr;
+	free(pixels);
+	pixels = malloc(width * height * rootPixmap->drawable.bitsPerPixel / 8);
+	*/
+	if (!pScreen->ModifyPixmapHeader(rootPixmap, width, height,
+                                         -1, -1, -1, pixels)) {
             pScrn->virtualX = old_width;
             pScrn->virtualY = old_height;
             return FALSE;
@@ -385,8 +395,8 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
     DUMMYPtr dPtr;
     int maxClock = 300000;
     GDevPtr device = xf86GetEntityInfo(pScrn->entityList[0])->device;
-    xf86OutputPtr output;
-    xf86CrtcPtr crtc;
+    xf86OutputPtr output[DUMMY_MAX_OUTPUTS];
+    xf86CrtcPtr crtc[DUMMY_MAX_OUTPUTS];
 
     if (flags & PROBE_DETECT) 
 	return TRUE;
@@ -460,6 +470,14 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
     xf86ProcessOptions(pScrn->scrnIndex, pScrn->options, dPtr->Options);
 
     xf86GetOptValBool(dPtr->Options, OPTION_SW_CURSOR,&dPtr->swCursor);
+    
+    dPtr->numOutputs = 1;
+    xf86GetOptValInteger(dPtr->Options, OPTION_NUM_OUTPUTS,&dPtr->numOutputs);
+    if (dPtr->numOutputs > DUMMY_MAX_OUTPUTS) {
+	xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Too many outputs (maximum is %u)\n",
+		   DUMMY_MAX_OUTPUTS);
+	RETURN;
+    }
 
     if (device->videoRam != 0) {
 	pScrn->videoRam = device->videoRam;
@@ -482,13 +500,22 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
 
     xf86CrtcConfigInit(pScrn, &dummy_xf86crtc_config_funcs);
 
+    for (i=0; i<dPtr->numOutputs; ++i) {
+      crtc[i] = xf86CrtcCreate(pScrn, &dummy_crtc_funcs);
+      crtc[i]->driver_private = (void *)(uintptr_t)i;
+
+      char szOutput[256];
+      snprintf(szOutput, sizeof(szOutput), "virtual%u", i);
+      output[i] = xf86OutputCreate (pScrn, &dummy_output_funcs, szOutput);
+
+      xf86OutputUseScreenMonitor(output[i], TRUE);
+
+      output[i]->possible_crtcs = 1 << i;
+      output[i]->possible_clones = 0;
+      output[i]->driver_private = (void *)(uintptr_t)i;;
+    }
+
     xf86CrtcSetSizeRange(pScrn, 256, 256, DUMMY_MAX_WIDTH, DUMMY_MAX_HEIGHT);
-
-    crtc = xf86CrtcCreate(pScrn, &dummy_crtc_funcs);
-
-    output = xf86OutputCreate (pScrn, &dummy_output_funcs, "default");
-
-    output->possible_crtcs = 0x7f;
 
     xf86InitialConfiguration(pScrn, TRUE);
 
@@ -507,18 +534,20 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
     /* Set the current mode to the first in the list */
     pScrn->currentMode = pScrn->modes;
 
-    /* Set default mode in CRTC */
-    crtc->funcs->set_mode_major(crtc, pScrn->currentMode, RR_Rotate_0, 0, 0);
+    for (i=0; i<dPtr->numOutputs; ++i) {
+      /* Set default mode in CRTC */
+      crtc[i]->funcs->set_mode_major(crtc[i], pScrn->currentMode, RR_Rotate_0, 0, 0);
+      
+      /* If monitor resolution is set on the command line, use it */
+      xf86SetDpi(pScrn, 0, 0);
 
-    /* If monitor resolution is set on the command line, use it */
-    xf86SetDpi(pScrn, 0, 0);
-
-    /* Set monitor size based on DPI */
-    output->mm_width = pScrn->xDpi > 0 ?
+      /* Set monitor size based on DPI */
+      output[i]->mm_width = pScrn->xDpi > 0 ?
         (pScrn->virtualX * 254 / (10*pScrn->xDpi)) : 0;
-    output->mm_height = pScrn->yDpi > 0 ?
+      output[i]->mm_height = pScrn->yDpi > 0 ?
         (pScrn->virtualY * 254 / (10*pScrn->yDpi)) : 0;
-
+    }
+    
     if (xf86LoadSubModule(pScrn, "fb") == NULL) {
 	RETURN;
     }
