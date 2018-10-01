@@ -1,3 +1,8 @@
+#  Copyright 2018 RealVNC Ltd.
+#
+#  This code is based on the X.Org dummy video driver with the following
+#  copyrights:
+#
 #  Copyright 2005 Adam Jackson.
 #
 #  Permission is hereby granted, free of charge, to any person obtaining a
@@ -27,13 +32,13 @@
 
 AM_CFLAGS = $(XORG_CFLAGS) $(PCIACCESS_CFLAGS)
 
-dummy_drv_la_LTLIBRARIES = dummy_drv.la
-dummy_drv_la_LDFLAGS = -module -avoid-version
-dummy_drv_la_LIBADD = $(XORG_LIBS)
-dummy_drv_ladir = @moduledir@/drivers
+vnc_drv_la_LTLIBRARIES = vnc_drv.la
+vnc_drv_la_LDFLAGS = -module -avoid-version
+vnc_drv_la_LIBADD = $(XORG_LIBS)
+vnc_drv_ladir = @moduledir@/drivers
 
-dummy_drv_la_SOURCES = \
+vnc_drv_la_SOURCES = \
          compat-api.h \
-         dummy_cursor.c \
-         dummy_driver.c \
-         dummy.h
+         vnc_cursor.c \
+         vnc_driver.c \
+         vnc.h

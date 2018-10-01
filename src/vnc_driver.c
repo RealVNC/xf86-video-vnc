@@ -1,5 +1,8 @@
-
 /*
+ * Copyright (C) 2018, RealVNC Ltd.
+ *
+ * This code is based on the X.Org dummy video driver with the following copyrights:
+ *
  * Copyright 2002, SuSE Linux AG, Author: Egbert Eich
  */
 
@@ -34,7 +37,7 @@
 /*
  * Driver data structures.
  */
-#include "dummy.h"
+#include "vnc.h"
 
 /* These need to be checked */
 #include <X11/X.h>
@@ -43,39 +46,39 @@
 #include "servermd.h"
 
 /* Mandatory functions */
-static const OptionInfoRec *	DUMMYAvailableOptions(int chipid, int busid);
-static void     DUMMYIdentify(int flags);
-static Bool     DUMMYProbe(DriverPtr drv, int flags);
-static Bool     DUMMYPreInit(ScrnInfoPtr pScrn, int flags);
-static Bool     DUMMYScreenInit(SCREEN_INIT_ARGS_DECL);
-static Bool     DUMMYEnterVT(VT_FUNC_ARGS_DECL);
-static void     DUMMYLeaveVT(VT_FUNC_ARGS_DECL);
-static Bool     DUMMYCloseScreen(CLOSE_SCREEN_ARGS_DECL);
-static Bool     DUMMYCreateWindow(WindowPtr pWin);
-static void     DUMMYFreeScreen(FREE_SCREEN_ARGS_DECL);
-static ModeStatus DUMMYValidMode(SCRN_ARG_TYPE arg, DisplayModePtr mode,
+static const OptionInfoRec *	VNCAvailableOptions(int chipid, int busid);
+static void     VNCIdentify(int flags);
+static Bool     VNCProbe(DriverPtr drv, int flags);
+static Bool     VNCPreInit(ScrnInfoPtr pScrn, int flags);
+static Bool     VNCScreenInit(SCREEN_INIT_ARGS_DECL);
+static Bool     VNCEnterVT(VT_FUNC_ARGS_DECL);
+static void     VNCLeaveVT(VT_FUNC_ARGS_DECL);
+static Bool     VNCCloseScreen(CLOSE_SCREEN_ARGS_DECL);
+static Bool     VNCCreateWindow(WindowPtr pWin);
+static void     VNCFreeScreen(FREE_SCREEN_ARGS_DECL);
+static ModeStatus VNCValidMode(SCRN_ARG_TYPE arg, DisplayModePtr mode,
                                  Bool verbose, int flags);
-static Bool	DUMMYSaveScreen(ScreenPtr pScreen, int mode);
+static Bool	VNCSaveScreen(ScreenPtr pScreen, int mode);
 
 /* Internally used functions */
-static Bool	dummyDriverFunc(ScrnInfoPtr pScrn, xorgDriverFuncOp op,
+static Bool	vncDriverFunc(ScrnInfoPtr pScrn, xorgDriverFuncOp op,
 				pointer ptr);
 
 
-/* static void     DUMMYDisplayPowerManagementSet(ScrnInfoPtr pScrn, */
+/* static void     VNCDisplayPowerManagementSet(ScrnInfoPtr pScrn, */
 /* 				int PowerManagementMode, int flags); */
 
-#define DUMMY_VERSION 4000
-#define DUMMY_NAME "DUMMY"
-#define DUMMY_DRIVER_NAME "dummy"
+#define VNC_VERSION 4000
+#define VNC_NAME "VNC"
+#define VNC_DRIVER_NAME "vnc"
 
-#define DUMMY_MAJOR_VERSION PACKAGE_VERSION_MAJOR
-#define DUMMY_MINOR_VERSION PACKAGE_VERSION_MINOR
-#define DUMMY_PATCHLEVEL PACKAGE_VERSION_PATCHLEVEL
+#define VNC_MAJOR_VERSION PACKAGE_VERSION_MAJOR
+#define VNC_MINOR_VERSION PACKAGE_VERSION_MINOR
+#define VNC_PATCHLEVEL PACKAGE_VERSION_PATCHLEVEL
 
-#define DUMMY_MAX_WIDTH 32767
-#define DUMMY_MAX_HEIGHT 32767
-#define DUMMY_MAX_OUTPUTS 10
+#define VNC_MAX_WIDTH 32767
+#define VNC_MAX_HEIGHT 32767
+#define VNC_MAX_OUTPUTS 10
 
 /*
  * This is intentionally screen-independent.  It indicates the binding
@@ -92,28 +95,28 @@ static int pix24bpp = 0;
  * an upper-case version of the driver name.
  */
 
-_X_EXPORT DriverRec DUMMY = {
-    DUMMY_VERSION,
-    DUMMY_DRIVER_NAME,
-    DUMMYIdentify,
-    DUMMYProbe,
-    DUMMYAvailableOptions,
+_X_EXPORT DriverRec VNC = {
+    VNC_VERSION,
+    VNC_DRIVER_NAME,
+    VNCIdentify,
+    VNCProbe,
+    VNCAvailableOptions,
     NULL,
     0,
-    dummyDriverFunc
+    vncDriverFunc
 };
 
-static SymTabRec DUMMYChipsets[] = {
-    { DUMMY_CHIP,   "dummy" },
+static SymTabRec VNCChipsets[] = {
+    { VNC_CHIP,   "vnc" },
     { -1,		 NULL }
 };
 
 typedef enum {
     OPTION_SW_CURSOR,
     OPTION_NUM_OUTPUTS
-} DUMMYOpts;
+} VNCOpts;
 
-static const OptionInfoRec DUMMYOptions[] = {
+static const OptionInfoRec VNCOptions[] = {
     { OPTION_SW_CURSOR,	  "SWcursor",	OPTV_BOOLEAN,	{0}, FALSE },
     { OPTION_NUM_OUTPUTS, "NumOutputs",	OPTV_INTEGER,	{0}, FALSE },
     { -1,                  NULL,           OPTV_NONE,	{0}, FALSE }
@@ -121,16 +124,16 @@ static const OptionInfoRec DUMMYOptions[] = {
 
 #ifdef XFree86LOADER
 
-static MODULESETUPPROTO(dummySetup);
+static MODULESETUPPROTO(vncSetup);
 
-static XF86ModuleVersionInfo dummyVersRec =
+static XF86ModuleVersionInfo vncVersRec =
 {
-	"dummy",
+	"vnc",
 	MODULEVENDORSTRING,
 	MODINFOSTRING1,
 	MODINFOSTRING2,
 	XORG_VERSION_CURRENT,
-	DUMMY_MAJOR_VERSION, DUMMY_MINOR_VERSION, DUMMY_PATCHLEVEL,
+	VNC_MAJOR_VERSION, VNC_MINOR_VERSION, VNC_PATCHLEVEL,
 	ABI_CLASS_VIDEODRV,
 	ABI_VIDEODRV_VERSION,
 	MOD_CLASS_VIDEODRV,
@@ -141,16 +144,16 @@ static XF86ModuleVersionInfo dummyVersRec =
  * This is the module init data.
  * Its name has to be the driver name followed by ModuleData
  */
-_X_EXPORT XF86ModuleData dummyModuleData = { &dummyVersRec, dummySetup, NULL };
+_X_EXPORT XF86ModuleData vncModuleData = { &vncVersRec, vncSetup, NULL };
 
 static pointer
-dummySetup(pointer module, pointer opts, int *errmaj, int *errmin)
+vncSetup(pointer module, pointer opts, int *errmaj, int *errmin)
 {
     static Bool setupDone = FALSE;
 
     if (!setupDone) {
 	setupDone = TRUE;
-        xf86AddDriver(&DUMMY, module, HaveDriverFuncs);
+        xf86AddDriver(&VNC, module, HaveDriverFuncs);
 
 	/*
 	 * Modules that this driver always requires can be loaded here
@@ -175,7 +178,7 @@ size_valid(ScrnInfoPtr pScrn, int width, int height)
 {
     /* Guard against invalid parameters */
     if (width == 0 || height == 0 ||
-        width > DUMMY_MAX_WIDTH || height > DUMMY_MAX_HEIGHT)
+        width > VNC_MAX_WIDTH || height > VNC_MAX_HEIGHT)
         return FALSE;
 
     /* videoRam is in kb, divide first to avoid 32-bit int overflow */
@@ -186,7 +189,7 @@ size_valid(ScrnInfoPtr pScrn, int width, int height)
 }
 
 static Bool
-dummy_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
+vnc_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
 {
     int old_width, old_height;
 
@@ -224,18 +227,18 @@ dummy_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
     }
 }
 
-static const xf86CrtcConfigFuncsRec dummy_xf86crtc_config_funcs = {
-    dummy_xf86crtc_resize
+static const xf86CrtcConfigFuncsRec vnc_xf86crtc_config_funcs = {
+    vnc_xf86crtc_resize
 };
 
 static xf86OutputStatus
-dummy_output_detect(xf86OutputPtr output)
+vnc_output_detect(xf86OutputPtr output)
 {
     return XF86OutputStatusConnected;
 }
 
 static int
-dummy_output_mode_valid(xf86OutputPtr output, DisplayModePtr pMode)
+vnc_output_mode_valid(xf86OutputPtr output, DisplayModePtr pMode)
 {
     if (size_valid(output->scrn, pMode->HDisplay, pMode->VDisplay)) {
         return MODE_OK;
@@ -245,26 +248,26 @@ dummy_output_mode_valid(xf86OutputPtr output, DisplayModePtr pMode)
 }
 
 static DisplayModePtr
-dummy_output_get_modes(xf86OutputPtr output)
+vnc_output_get_modes(xf86OutputPtr output)
 {
     return NULL;
 }
 
 static void
-dummy_output_dpms(xf86OutputPtr output, int dpms)
+vnc_output_dpms(xf86OutputPtr output, int dpms)
 {
     return;
 }
 
-static const xf86OutputFuncsRec dummy_output_funcs = {
-    .detect = dummy_output_detect,
-    .mode_valid = dummy_output_mode_valid,
-    .get_modes = dummy_output_get_modes,
-    .dpms = dummy_output_dpms,
+static const xf86OutputFuncsRec vnc_output_funcs = {
+    .detect = vnc_output_detect,
+    .mode_valid = vnc_output_mode_valid,
+    .get_modes = vnc_output_get_modes,
+    .dpms = vnc_output_dpms,
 };
 
 static Bool
-dummy_crtc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode,
+vnc_crtc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode,
 			  Rotation rotation, int x, int y)
 {
     crtc->mode = *mode;
@@ -276,28 +279,28 @@ dummy_crtc_set_mode_major(xf86CrtcPtr crtc, DisplayModePtr mode,
 }
 
 static void
-dummy_crtc_dpms(xf86CrtcPtr output, int dpms)
+vnc_crtc_dpms(xf86CrtcPtr output, int dpms)
 {
     return;
 }
 
-static const xf86CrtcFuncsRec dummy_crtc_funcs = {
-    .set_mode_major = dummy_crtc_set_mode_major,
-    .dpms = dummy_crtc_dpms,
+static const xf86CrtcFuncsRec vnc_crtc_funcs = {
+    .set_mode_major = vnc_crtc_set_mode_major,
+    .dpms = vnc_crtc_dpms,
 };
 
 static Bool
-DUMMYGetRec(ScrnInfoPtr pScrn)
+VNCGetRec(ScrnInfoPtr pScrn)
 {
     /*
-     * Allocate a DUMMYRec, and hook it into pScrn->driverPrivate.
+     * Allocate a VNCRec, and hook it into pScrn->driverPrivate.
      * pScrn->driverPrivate is initialised to NULL, so we can check if
      * the allocation has already been done.
      */
     if (pScrn->driverPrivate != NULL)
 	return TRUE;
 
-    pScrn->driverPrivate = xnfcalloc(sizeof(DUMMYRec), 1);
+    pScrn->driverPrivate = xnfcalloc(sizeof(VNCRec), 1);
 
     if (pScrn->driverPrivate == NULL)
 	return FALSE;
@@ -305,7 +308,7 @@ DUMMYGetRec(ScrnInfoPtr pScrn)
 }
 
 static void
-DUMMYFreeRec(ScrnInfoPtr pScrn)
+VNCFreeRec(ScrnInfoPtr pScrn)
 {
     if (pScrn->driverPrivate == NULL)
 	return;
@@ -314,22 +317,22 @@ DUMMYFreeRec(ScrnInfoPtr pScrn)
 }
 
 static const OptionInfoRec *
-DUMMYAvailableOptions(int chipid, int busid)
+VNCAvailableOptions(int chipid, int busid)
 {
-    return DUMMYOptions;
+    return VNCOptions;
 }
 
 /* Mandatory */
 static void
-DUMMYIdentify(int flags)
+VNCIdentify(int flags)
 {
-    xf86PrintChipsets(DUMMY_NAME, "Driver for Dummy chipsets",
-			DUMMYChipsets);
+    xf86PrintChipsets(VNC_NAME, "Driver for Vnc chipsets",
+			VNCChipsets);
 }
 
 /* Mandatory */
 static Bool
-DUMMYProbe(DriverPtr drv, int flags)
+VNCProbe(DriverPtr drv, int flags)
 {
     Bool foundScreen = FALSE;
     int numDevSections, numUsed;
@@ -342,7 +345,7 @@ DUMMYProbe(DriverPtr drv, int flags)
      * Find the config file Device sections that match this
      * driver, and return if there are none.
      */
-    if ((numDevSections = xf86MatchDevice(DUMMY_DRIVER_NAME,
+    if ((numDevSections = xf86MatchDevice(VNC_DRIVER_NAME,
 					  &devSections)) <= 0) {
 	return FALSE;
     }
@@ -354,22 +357,22 @@ DUMMYProbe(DriverPtr drv, int flags)
 	for (i = 0; i < numUsed; i++) {
 	    ScrnInfoPtr pScrn = NULL;
 	    int entityIndex = 
-		xf86ClaimNoSlot(drv,DUMMY_CHIP,devSections[i],TRUE);
+		xf86ClaimNoSlot(drv,VNC_CHIP,devSections[i],TRUE);
 	    /* Allocate a ScrnInfoRec and claim the slot */
 	    if ((pScrn = xf86AllocateScreen(drv,0 ))) {
 		   xf86AddEntityToScreen(pScrn,entityIndex);
-		    pScrn->driverVersion = DUMMY_VERSION;
-		    pScrn->driverName    = DUMMY_DRIVER_NAME;
-		    pScrn->name          = DUMMY_NAME;
-		    pScrn->Probe         = DUMMYProbe;
-		    pScrn->PreInit       = DUMMYPreInit;
-		    pScrn->ScreenInit    = DUMMYScreenInit;
-		    pScrn->SwitchMode    = DUMMYSwitchMode;
-		    pScrn->AdjustFrame   = DUMMYAdjustFrame;
-		    pScrn->EnterVT       = DUMMYEnterVT;
-		    pScrn->LeaveVT       = DUMMYLeaveVT;
-		    pScrn->FreeScreen    = DUMMYFreeScreen;
-		    pScrn->ValidMode     = DUMMYValidMode;
+		    pScrn->driverVersion = VNC_VERSION;
+		    pScrn->driverName    = VNC_DRIVER_NAME;
+		    pScrn->name          = VNC_NAME;
+		    pScrn->Probe         = VNCProbe;
+		    pScrn->PreInit       = VNCPreInit;
+		    pScrn->ScreenInit    = VNCScreenInit;
+		    pScrn->SwitchMode    = VNCSwitchMode;
+		    pScrn->AdjustFrame   = VNCAdjustFrame;
+		    pScrn->EnterVT       = VNCEnterVT;
+		    pScrn->LeaveVT       = VNCLeaveVT;
+		    pScrn->FreeScreen    = VNCFreeScreen;
+		    pScrn->ValidMode     = VNCValidMode;
 
 		    foundScreen = TRUE;
 	    }
@@ -382,36 +385,36 @@ DUMMYProbe(DriverPtr drv, int flags)
 }
 
 # define RETURN \
-    { DUMMYFreeRec(pScrn);\
+    { VNCFreeRec(pScrn);\
 			    return FALSE;\
 					     }
 
 /* Mandatory */
 Bool
-DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
+VNCPreInit(ScrnInfoPtr pScrn, int flags)
 {
     ClockRangePtr clockRanges;
     int i;
-    DUMMYPtr dPtr;
+    VNCPtr dPtr;
     int maxClock = 300000;
     GDevPtr device = xf86GetEntityInfo(pScrn->entityList[0])->device;
-    xf86OutputPtr output[DUMMY_MAX_OUTPUTS];
-    xf86CrtcPtr crtc[DUMMY_MAX_OUTPUTS];
+    xf86OutputPtr output[VNC_MAX_OUTPUTS];
+    xf86CrtcPtr crtc[VNC_MAX_OUTPUTS];
 
     if (flags & PROBE_DETECT) 
 	return TRUE;
     
-    /* Allocate the DummyRec driverPrivate */
-    if (!DUMMYGetRec(pScrn)) {
+    /* Allocate the VncRec driverPrivate */
+    if (!VNCGetRec(pScrn)) {
 	return FALSE;
     }
     
-    dPtr = DUMMYPTR(pScrn);
+    dPtr = VNCPTR(pScrn);
 
-    pScrn->chipset = (char *)xf86TokenToString(DUMMYChipsets,
-					       DUMMY_CHIP);
+    pScrn->chipset = (char *)xf86TokenToString(VNCChipsets,
+					       VNC_CHIP);
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Chipset is a DUMMY\n");
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Chipset is a VNC\n");
     
     pScrn->monitor = pScrn->confScreen->monitor;
 
@@ -463,9 +466,9 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
 
     xf86CollectOptions(pScrn, device->options);
     /* Process the options */
-    if (!(dPtr->Options = malloc(sizeof(DUMMYOptions))))
+    if (!(dPtr->Options = malloc(sizeof(VNCOptions))))
 	return FALSE;
-    memcpy(dPtr->Options, DUMMYOptions, sizeof(DUMMYOptions));
+    memcpy(dPtr->Options, VNCOptions, sizeof(VNCOptions));
 
     xf86ProcessOptions(pScrn->scrnIndex, pScrn->options, dPtr->Options);
 
@@ -473,9 +476,9 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
     
     dPtr->numOutputs = 1;
     xf86GetOptValInteger(dPtr->Options, OPTION_NUM_OUTPUTS,&dPtr->numOutputs);
-    if (dPtr->numOutputs > DUMMY_MAX_OUTPUTS) {
+    if (dPtr->numOutputs > VNC_MAX_OUTPUTS) {
 	xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Too many outputs (maximum is %u)\n",
-		   DUMMY_MAX_OUTPUTS);
+		   VNC_MAX_OUTPUTS);
 	RETURN;
     }
 
@@ -488,7 +491,7 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
 	xf86DrvMsg(pScrn->scrnIndex, X_PROBED, "VideoRAM: %d kByte\n",
 		   pScrn->videoRam);
     }
-    
+
     if (device->dacSpeeds[0] != 0) {
 	maxClock = device->dacSpeeds[0];
 	xf86DrvMsg(pScrn->scrnIndex, X_CONFIG, "Max Clock: %d kHz\n",
@@ -498,24 +501,24 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
 		   maxClock);
     }
 
-    xf86CrtcConfigInit(pScrn, &dummy_xf86crtc_config_funcs);
+    xf86CrtcConfigInit(pScrn, &vnc_xf86crtc_config_funcs);
 
     for (i=0; i<dPtr->numOutputs; ++i) {
-      crtc[i] = xf86CrtcCreate(pScrn, &dummy_crtc_funcs);
+      crtc[i] = xf86CrtcCreate(pScrn, &vnc_crtc_funcs);
       crtc[i]->driver_private = (void *)(uintptr_t)i;
 
-      char szOutput[256];
-      snprintf(szOutput, sizeof(szOutput), "virtual%u", i);
-      output[i] = xf86OutputCreate (pScrn, &dummy_output_funcs, szOutput);
+      char outputName[256];
+      snprintf(outputName, sizeof(outputName), "vnc-%u", i);
+      output[i] = xf86OutputCreate (pScrn, &vnc_output_funcs, outputName);
 
       xf86OutputUseScreenMonitor(output[i], TRUE);
 
       output[i]->possible_crtcs = 1 << i;
       output[i]->possible_clones = 0;
-      output[i]->driver_private = (void *)(uintptr_t)i;;
+      output[i]->driver_private = (void *)(uintptr_t)i;
     }
 
-    xf86CrtcSetSizeRange(pScrn, 256, 256, DUMMY_MAX_WIDTH, DUMMY_MAX_HEIGHT);
+    xf86CrtcSetSizeRange(pScrn, 256, 256, VNC_MAX_WIDTH, VNC_MAX_HEIGHT);
 
     xf86InitialConfiguration(pScrn, TRUE);
 
@@ -541,11 +544,11 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
       /* If monitor resolution is set on the command line, use it */
       xf86SetDpi(pScrn, 0, 0);
 
-      /* Set monitor size based on DPI */
-      output[i]->mm_width = pScrn->xDpi > 0 ?
-        (pScrn->virtualX * 254 / (10*pScrn->xDpi)) : 0;
-      output[i]->mm_height = pScrn->yDpi > 0 ?
-        (pScrn->virtualY * 254 / (10*pScrn->yDpi)) : 0;
+      /* Set monitor size based on DPI */                                                           
+      output[i]->mm_width = pScrn->xDpi > 0 ?                                                       
+         (pScrn->virtualX * 254 / (10*pScrn->xDpi)) : 0;                                             
+      output[i]->mm_height = pScrn->yDpi > 0 ?                                                      
+	 (pScrn->virtualY * 254 / (10*pScrn->yDpi)) : 0;           
     }
     
     if (xf86LoadSubModule(pScrn, "fb") == NULL) {
@@ -567,23 +570,23 @@ DUMMYPreInit(ScrnInfoPtr pScrn, int flags)
 
 /* Mandatory */
 static Bool
-DUMMYEnterVT(VT_FUNC_ARGS_DECL)
+VNCEnterVT(VT_FUNC_ARGS_DECL)
 {
     SCRN_INFO_PTR(arg);
     
-    DUMMYAdjustFrame(ADJUST_FRAME_ARGS(pScrn, pScrn->frameX0, pScrn->frameY0));
+    VNCAdjustFrame(ADJUST_FRAME_ARGS(pScrn, pScrn->frameX0, pScrn->frameY0));
 
     return TRUE;
 }
 
 /* Mandatory */
 static void
-DUMMYLeaveVT(VT_FUNC_ARGS_DECL)
+VNCLeaveVT(VT_FUNC_ARGS_DECL)
 {
 }
 
 static void
-DUMMYLoadPalette(
+VNCLoadPalette(
    ScrnInfoPtr pScrn,
    int numColors,
    int *indices,
@@ -591,7 +594,7 @@ DUMMYLoadPalette(
    VisualPtr pVisual
 ){
    int i, index, shift, Gshift;
-   DUMMYPtr dPtr = DUMMYPTR(pScrn);
+   VNCPtr dPtr = VNCPTR(pScrn);
 
    switch(pScrn->depth) {
    case 15:	
@@ -615,14 +618,14 @@ DUMMYLoadPalette(
 
 }
 
-static ScrnInfoPtr DUMMYScrn; /* static-globalize it */
+static ScrnInfoPtr VNCScrn; /* static-globalize it */
 
 /* Mandatory */
 static Bool
-DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
+VNCScreenInit(SCREEN_INIT_ARGS_DECL)
 {
     ScrnInfoPtr pScrn;
-    DUMMYPtr dPtr;
+    VNCPtr dPtr;
     int ret;
     VisualPtr visual;
     void *pixels;
@@ -632,8 +635,8 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
      * one first thing
      */
     pScrn = xf86ScreenToScrn(pScreen);
-    dPtr = DUMMYPTR(pScrn);
-    DUMMYScrn = pScrn;
+    dPtr = VNCPTR(pScrn);
+    VNCScrn = pScrn;
 
 
     if (!(pixels = malloc(pScrn->videoRam * 1024)))
@@ -698,7 +701,7 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
 
     if (!dPtr->swCursor) {
       /* HW cursor functions */
-      if (!DUMMYCursorInit(pScreen)) {
+      if (!VNCCursorInit(pScreen)) {
 	  xf86DrvMsg(pScrn->scrnIndex, X_ERROR,
 		     "Hardware cursor initialization failed\n");
 	  return FALSE;
@@ -710,7 +713,7 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
 	return FALSE;
 
     if (!xf86HandleColormaps(pScreen, 1024, pScrn->rgbBits,
-                         DUMMYLoadPalette, NULL, 
+                         VNCLoadPalette, NULL, 
                          CMAP_PALETTED_TRUECOLOR 
 			     | CMAP_RELOAD_ON_MODE_SWITCH))
 	return FALSE;
@@ -718,16 +721,16 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
     if (!xf86CrtcScreenInit(pScreen))
         return FALSE;
 
-    pScreen->SaveScreen = DUMMYSaveScreen;
+    pScreen->SaveScreen = VNCSaveScreen;
 
     
     /* Wrap the current CloseScreen function */
     dPtr->CloseScreen = pScreen->CloseScreen;
-    pScreen->CloseScreen = DUMMYCloseScreen;
+    pScreen->CloseScreen = VNCCloseScreen;
 
     /* Wrap the current CreateWindow function */
     dPtr->CreateWindow = pScreen->CreateWindow;
-    pScreen->CreateWindow = DUMMYCreateWindow;
+    pScreen->CreateWindow = VNCCreateWindow;
 
     /* Report any unused options (only for the first generation) */
     if (serverGeneration == 1) {
@@ -739,23 +742,23 @@ DUMMYScreenInit(SCREEN_INIT_ARGS_DECL)
 
 /* Mandatory */
 Bool
-DUMMYSwitchMode(SWITCH_MODE_ARGS_DECL)
+VNCSwitchMode(SWITCH_MODE_ARGS_DECL)
 {
     return TRUE;
 }
 
 /* Mandatory */
 void
-DUMMYAdjustFrame(ADJUST_FRAME_ARGS_DECL)
+VNCAdjustFrame(ADJUST_FRAME_ARGS_DECL)
 {
 }
 
 /* Mandatory */
 static Bool
-DUMMYCloseScreen(CLOSE_SCREEN_ARGS_DECL)
+VNCCloseScreen(CLOSE_SCREEN_ARGS_DECL)
 {
     ScrnInfoPtr pScrn = xf86ScreenToScrn(pScreen);
-    DUMMYPtr dPtr = DUMMYPTR(pScrn);
+    VNCPtr dPtr = VNCPTR(pScrn);
 
     free(pScreen->GetScreenPixmap(pScreen)->devPrivate.ptr);
 
@@ -769,21 +772,21 @@ DUMMYCloseScreen(CLOSE_SCREEN_ARGS_DECL)
 
 /* Optional */
 static void
-DUMMYFreeScreen(FREE_SCREEN_ARGS_DECL)
+VNCFreeScreen(FREE_SCREEN_ARGS_DECL)
 {
     SCRN_INFO_PTR(arg);
-    DUMMYFreeRec(pScrn);
+    VNCFreeRec(pScrn);
 }
 
 static Bool
-DUMMYSaveScreen(ScreenPtr pScreen, int mode)
+VNCSaveScreen(ScreenPtr pScreen, int mode)
 {
     return TRUE;
 }
 
 /* Optional */
 static ModeStatus
-DUMMYValidMode(SCRN_ARG_TYPE arg, DisplayModePtr mode, Bool verbose, int flags)
+VNCValidMode(SCRN_ARG_TYPE arg, DisplayModePtr mode, Bool verbose, int flags)
 {
     return(MODE_OK);
 }
@@ -792,26 +795,26 @@ Atom VFB_PROP  = 0;
 #define  VFB_PROP_NAME  "VFB_IDENT"
 
 static Bool
-DUMMYCreateWindow(WindowPtr pWin)
+VNCCreateWindow(WindowPtr pWin)
 {
     ScreenPtr pScreen = pWin->drawable.pScreen;
-    DUMMYPtr dPtr = DUMMYPTR(DUMMYScrn);
+    VNCPtr dPtr = VNCPTR(VNCScrn);
     WindowPtr pWinRoot;
     int ret;
 
     pScreen->CreateWindow = dPtr->CreateWindow;
     ret = pScreen->CreateWindow(pWin);
     dPtr->CreateWindow = pScreen->CreateWindow;
-    pScreen->CreateWindow = DUMMYCreateWindow;
+    pScreen->CreateWindow = VNCCreateWindow;
 
     if(ret != TRUE)
 	return(ret);
 	
     if(dPtr->prop == FALSE) {
 #if GET_ABI_MAJOR(ABI_VIDEODRV_VERSION) < 8
-        pWinRoot = WindowTable[DUMMYScrn->pScreen->myNum];
+        pWinRoot = WindowTable[VNCScrn->pScreen->myNum];
 #else
-        pWinRoot = DUMMYScrn->pScreen->root;
+        pWinRoot = VNCScrn->pScreen->root;
 #endif
         if (! ValidAtom(VFB_PROP))
             VFB_PROP = MakeAtom(VFB_PROP_NAME, strlen(VFB_PROP_NAME), 1);
@@ -833,7 +836,7 @@ DUMMYCreateWindow(WindowPtr pWin)
 #endif
 
 static Bool
-dummyDriverFunc(ScrnInfoPtr pScrn, xorgDriverFuncOp op, pointer ptr)
+vncDriverFunc(ScrnInfoPtr pScrn, xorgDriverFuncOp op, pointer ptr)
 {
     CARD32 *flag;
     

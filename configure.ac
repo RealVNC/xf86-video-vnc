@@ -1,3 +1,8 @@
+#  Copyright 2018 RealVNC Ltd.
+#
+#  This code is based on the X.Org dummy video driver with the following
+#  copyrights:
+#
 #  Copyright 2005 Adam Jackson.
 #
 #  Permission is hereby granted, free of charge, to any person obtaining a
@@ -22,10 +27,10 @@
 
 # Initialize Autoconf
 AC_PREREQ([2.60])
-AC_INIT([xf86-video-dummy],
-        [0.3.8],
+AC_INIT([xf86-video-vnc],
+        [0.0.1],
         [https://bugs.freedesktop.org/enter_bug.cgi?product=xorg],
-        [xf86-video-dummy])
+        [xf86-video-vnc])
 AC_CONFIG_SRCDIR([Makefile.am])
 AC_CONFIG_HEADERS([config.h])
 AC_CONFIG_AUX_DIR(.)
@@ -62,7 +67,7 @@ PKG_CHECK_MODULES(XORG, [xorg-server >= 1.4.99.901] xproto fontsproto $REQUIRED_
 # Checks for libraries.
 
 
-DRIVER_NAME=dummy
+DRIVER_NAME=vnc
 AC_SUBST([DRIVER_NAME])
 
 AC_CONFIG_FILES([
