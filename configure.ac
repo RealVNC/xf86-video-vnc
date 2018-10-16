@@ -29,7 +29,7 @@
 AC_PREREQ([2.60])
 AC_INIT([xf86-video-vnc],
         [0.0.1],
-        [https://bugs.freedesktop.org/enter_bug.cgi?product=xorg],
+        [https://www.realvnc.com],
         [xf86-video-vnc])
 AC_CONFIG_SRCDIR([Makefile.am])
 AC_CONFIG_HEADERS([config.h])
