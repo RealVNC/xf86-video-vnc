@@ -81,13 +81,6 @@ static Bool	vncDriverFunc(ScrnInfoPtr pScrn, xorgDriverFuncOp op,
 #define VNC_MAX_OUTPUTS 10
 
 /*
- * This is intentionally screen-independent.  It indicates the binding
- * choice made in the first PreInit.
- */
-static int pix24bpp = 0;
-
-
-/*
  * This contains the functions needed by the server after loading the driver
  * module.  It must be supplied, and gets passed back by the SetupProc
  * function in the dynamic case.  In the static case, a reference to this
@@ -188,11 +181,22 @@ size_valid(ScrnInfoPtr pScrn, int width, int height)
     return TRUE;
 }
 
+static void*
+realloc_fb(ScrnInfoPtr pScrn, void* current)
+{
+  int fbBytes = pScrn->virtualX * pScrn->virtualY * pScrn->bitsPerPixel / 8;
+  xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Setting fb to %d x %d (%d B)\n",
+	     pScrn->virtualX, pScrn->virtualY, fbBytes);
+  void* pixels = current ? realloc(current, fbBytes) : malloc(fbBytes);
+  if (!pixels)
+    xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to (re)alloc fb\n");
+  return pixels;
+}
+
 static Bool
 vnc_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
 {
     int old_width, old_height;
-
     old_width = pScrn->virtualX;
     old_height = pScrn->virtualY;
 
@@ -204,22 +208,16 @@ vnc_xf86crtc_resize(ScrnInfoPtr pScrn, int width, int height)
         pScrn->virtualY = height;
 
         rootPixmap = pScreen->GetScreenPixmap(pScreen);
-
-	void* pixels = NULL;
-	/* XXX We can actually reallocate the pixels here, saving some RAM!
-	pixels = rootPixmap->devPrivate.ptr;
-	free(pixels);
-	pixels = malloc(width * height * rootPixmap->drawable.bitsPerPixel / 8);
-	*/
+	void* pixels = realloc_fb(pScrn, rootPixmap->devPrivate.ptr);
+	if (!pixels)
+	  return FALSE;
 	if (!pScreen->ModifyPixmapHeader(rootPixmap, width, height,
                                          -1, -1, -1, pixels)) {
             pScrn->virtualX = old_width;
             pScrn->virtualY = old_height;
             return FALSE;
         }
-
-        pScrn->displayWidth = rootPixmap->devKind /
-            (rootPixmap->drawable.bitsPerPixel / 8);
+        pScrn->displayWidth = pScrn->virtualX * (pScrn->bitsPerPixel / 8);
 
         return TRUE;
     } else {
@@ -240,17 +238,47 @@ vnc_output_detect(xf86OutputPtr output)
 static int
 vnc_output_mode_valid(xf86OutputPtr output, DisplayModePtr pMode)
 {
-    if (size_valid(output->scrn, pMode->HDisplay, pMode->VDisplay)) {
-        return MODE_OK;
-    } else {
-        return MODE_MEM;
-    }
+  return MODE_OK;
+}
+
+static DisplayModePtr add_mode(DisplayModePtr modes, int cx, int cy)
+{
+  DisplayModePtr m = xnfcalloc(sizeof(DisplayModeRec), 1);
+  DisplayModePtr last;
+
+  char modeName[256];
+  sprintf(modeName, "%ux%u", cx, cy);
+  m->name = xnfstrdup(modeName);      
+  
+  m->status = MODE_OK;
+  m->type = M_T_BUILTIN;
+  m->HDisplay  = cx;
+  m->HSyncStart = m->HDisplay + 2;
+  m->HSyncEnd = m->HDisplay + 4;
+  m->HTotal = m->HDisplay + 6;
+  m->VDisplay = cy;
+  m->VSyncStart = m->VDisplay + 2;
+  m->VSyncEnd = m->VDisplay + 4;
+  m->VTotal = m->VDisplay + 6;
+  m->Clock = m->HTotal * m->VTotal * 60 / 1000; /* kHz */ 
+
+  m->next = 0;
+  m->prev = 0;
+  if (!modes) return m;
+
+  /* Add to existing list */
+  for (last = modes; last->next != 0; last = last->next) {};
+  m->prev = last;
+  last->next = m;
+  return modes;
 }
 
 static DisplayModePtr
 vnc_output_get_modes(xf86OutputPtr output)
 {
-    return NULL;
+  DisplayModePtr m = 0;
+  m = add_mode(m, 1024, 768);
+  return m;
 }
 
 static void
@@ -403,7 +431,7 @@ VNCPreInit(ScrnInfoPtr pScrn, int flags)
 
     if (flags & PROBE_DETECT) 
 	return TRUE;
-    
+
     /* Allocate the VncRec driverPrivate */
     if (!VNCGetRec(pScrn)) {
 	return FALSE;
@@ -441,10 +469,6 @@ VNCPreInit(ScrnInfoPtr pScrn, int flags)
     if (pScrn->depth == 8)
 	pScrn->rgbBits = 8;
 
-    /* Get the depth24 pixmap format */
-    if (pScrn->depth == 24 && pix24bpp == 0)
-	pix24bpp = xf86GetBppFromDepth(pScrn, 24);
-
     /*
      * This must happen after pScrn->display has been set because
      * xf86SetWeight references it.
@@ -463,6 +487,15 @@ VNCPreInit(ScrnInfoPtr pScrn, int flags)
 
     if (!xf86SetDefaultVisual(pScrn, -1)) 
 	return FALSE;
+
+    if (pScrn->depth > 1) {
+	Gamma zeros = {0.0, 0.0, 0.0};
+
+	if (!xf86SetGamma(pScrn, zeros))
+	    return FALSE;
+    }
+
+    xf86SetDpi(pScrn, 96, 96);
 
     xf86CollectOptions(pScrn, device->options);
     /* Process the options */
@@ -522,16 +555,9 @@ VNCPreInit(ScrnInfoPtr pScrn, int flags)
 
     xf86InitialConfiguration(pScrn, TRUE);
 
-    if (pScrn->depth > 1) {
-	Gamma zeros = {0.0, 0.0, 0.0};
-
-	if (!xf86SetGamma(pScrn, zeros))
-	    return FALSE;
-    }
-
     if (pScrn->modes == NULL) {
 	xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "No valid modes found\n");
-	RETURN;
+	return FALSE;
     }
 
     /* Set the current mode to the first in the list */
@@ -540,30 +566,21 @@ VNCPreInit(ScrnInfoPtr pScrn, int flags)
     for (i=0; i<dPtr->numOutputs; ++i) {
       /* Set default mode in CRTC */
       crtc[i]->funcs->set_mode_major(crtc[i], pScrn->currentMode, RR_Rotate_0, 0, 0);
-      
-      /* If monitor resolution is set on the command line, use it */
-      xf86SetDpi(pScrn, 0, 0);
-
-      /* Set monitor size based on DPI */                                                           
-      output[i]->mm_width = pScrn->xDpi > 0 ?                                                       
-         (pScrn->virtualX * 254 / (10*pScrn->xDpi)) : 0;                                             
-      output[i]->mm_height = pScrn->yDpi > 0 ?                                                      
-	 (pScrn->virtualY * 254 / (10*pScrn->yDpi)) : 0;           
-    }
-    
-    if (xf86LoadSubModule(pScrn, "fb") == NULL) {
-	RETURN;
     }
 
-    if (!dPtr->swCursor) {
-	if (!xf86LoadSubModule(pScrn, "ramdac"))
-	    RETURN;
-    }
-    
     /* We have no contiguous physical fb in physical memory */
     pScrn->memPhysBase = 0;
     pScrn->fbOffset = 0;
 
+    if (xf86LoadSubModule(pScrn, "fb") == NULL) {
+      return FALSE;
+    }
+
+    if (!dPtr->swCursor) {
+      if (!xf86LoadSubModule(pScrn, "ramdac"))
+	return FALSE;
+    }
+    
     return TRUE;
 }
 #undef RETURN
@@ -638,10 +655,6 @@ VNCScreenInit(SCREEN_INIT_ARGS_DECL)
     dPtr = VNCPTR(pScrn);
     VNCScrn = pScrn;
 
-
-    if (!(pixels = malloc(pScrn->videoRam * 1024)))
-	return FALSE;
-
     /*
      * Reset visual list.
      */
@@ -657,6 +670,10 @@ VNCScreenInit(SCREEN_INIT_ARGS_DECL)
     if (!miSetPixmapDepths ()) return FALSE;
 
     pScrn->displayWidth = pScrn->virtualX;
+
+    pixels = realloc_fb(pScrn, 0);
+    if (!pixels)
+      return FALSE;
 
     /*
      * Call the framebuffer layer's ScreenInit function, and fill in other
@@ -720,6 +737,10 @@ VNCScreenInit(SCREEN_INIT_ARGS_DECL)
 
     if (!xf86CrtcScreenInit(pScreen))
         return FALSE;
+
+    if (!xf86SetDesiredModes(pScrn)) {
+        return FALSE;
+    }
 
     pScreen->SaveScreen = VNCSaveScreen;
 
@@ -791,8 +812,8 @@ VNCValidMode(SCRN_ARG_TYPE arg, DisplayModePtr mode, Bool verbose, int flags)
     return(MODE_OK);
 }
 
-Atom VFB_PROP  = 0;
-#define  VFB_PROP_NAME  "VFB_IDENT"
+Atom VNC_PROP  = 0;
+#define  VNC_PROP_NAME  "VNC_DRV_VERSION"
 
 static Bool
 VNCCreateWindow(WindowPtr pWin)
@@ -816,12 +837,12 @@ VNCCreateWindow(WindowPtr pWin)
 #else
         pWinRoot = VNCScrn->pScreen->root;
 #endif
-        if (! ValidAtom(VFB_PROP))
-            VFB_PROP = MakeAtom(VFB_PROP_NAME, strlen(VFB_PROP_NAME), 1);
+        if (! ValidAtom(VNC_PROP))
+            VNC_PROP = MakeAtom(VNC_PROP_NAME, strlen(VNC_PROP_NAME), 1);
 
-        ret = dixChangeWindowProperty(serverClient, pWinRoot, VFB_PROP,
+        ret = dixChangeWindowProperty(serverClient, pWinRoot, VNC_PROP,
                                       XA_STRING, 8, PropModeReplace,
-                                      (int)4, (pointer)"TRUE", FALSE);
+                                      (int)strlen(VERSION), (pointer)VERSION, FALSE);
 	if( ret != Success)
 		ErrorF("Could not set VFB root window property");
         dPtr->prop = TRUE;
