@@ -20,18 +20,12 @@
 /* All drivers using the mi colormap manipulation need this */
 #include "micmap.h"
 
-/* identifying atom needed by magnifiers */
 #include <X11/Xatom.h>
 #include "property.h"
-
 #include "xf86cmap.h"
-
 #include "xf86fbman.h"
-
 #include "fb.h"
-
 #include "picturestr.h"
-
 #include "xf86Crtc.h"
 
 /*
@@ -63,10 +57,6 @@ static Bool	VNCSaveScreen(ScreenPtr pScreen, int mode);
 /* Internally used functions */
 static Bool	vncDriverFunc(ScrnInfoPtr pScrn, xorgDriverFuncOp op,
 				pointer ptr);
-
-
-/* static void     VNCDisplayPowerManagementSet(ScrnInfoPtr pScrn, */
-/* 				int PowerManagementMode, int flags); */
 
 #define VNC_VERSION 4000
 #define VNC_NAME "VNC"
@@ -184,13 +174,13 @@ size_valid(ScrnInfoPtr pScrn, int width, int height)
 static void*
 realloc_fb(ScrnInfoPtr pScrn, void* current)
 {
-  int fbBytes = pScrn->virtualX * pScrn->virtualY * pScrn->bitsPerPixel / 8;
-  xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Setting fb to %d x %d (%d B)\n",
-	     pScrn->virtualX, pScrn->virtualY, fbBytes);
-  void* pixels = current ? realloc(current, fbBytes) : malloc(fbBytes);
-  if (!pixels)
-    xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to (re)alloc fb\n");
-  return pixels;
+    int fbBytes = pScrn->virtualX * pScrn->virtualY * pScrn->bitsPerPixel / 8;
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Setting fb to %d x %d (%d B)\n",
+	       pScrn->virtualX, pScrn->virtualY, fbBytes);
+    void* pixels = current ? realloc(current, fbBytes) : malloc(fbBytes);
+    if (!pixels)
+	xf86DrvMsg(pScrn->scrnIndex, X_ERROR, "Failed to (re)alloc fb\n");
+    return pixels;
 }
 
 static Bool
@@ -238,47 +228,47 @@ vnc_output_detect(xf86OutputPtr output)
 static int
 vnc_output_mode_valid(xf86OutputPtr output, DisplayModePtr pMode)
 {
-  return MODE_OK;
+    return MODE_OK;
 }
 
 static DisplayModePtr add_mode(DisplayModePtr modes, int cx, int cy)
 {
-  DisplayModePtr m = xnfcalloc(sizeof(DisplayModeRec), 1);
-  DisplayModePtr last;
-
-  char modeName[256];
-  sprintf(modeName, "%ux%u", cx, cy);
-  m->name = xnfstrdup(modeName);      
+    DisplayModePtr m = xnfcalloc(sizeof(DisplayModeRec), 1);
+    DisplayModePtr last;
+    
+    char modeName[256];
+    sprintf(modeName, "%ux%u", cx, cy);
+    m->name = xnfstrdup(modeName);      
   
-  m->status = MODE_OK;
-  m->type = M_T_BUILTIN;
-  m->HDisplay  = cx;
-  m->HSyncStart = m->HDisplay + 2;
-  m->HSyncEnd = m->HDisplay + 4;
-  m->HTotal = m->HDisplay + 6;
-  m->VDisplay = cy;
-  m->VSyncStart = m->VDisplay + 2;
-  m->VSyncEnd = m->VDisplay + 4;
-  m->VTotal = m->VDisplay + 6;
-  m->Clock = m->HTotal * m->VTotal * 60 / 1000; /* kHz */ 
-
-  m->next = 0;
-  m->prev = 0;
-  if (!modes) return m;
-
-  /* Add to existing list */
-  for (last = modes; last->next != 0; last = last->next) {};
-  m->prev = last;
-  last->next = m;
-  return modes;
+    m->status = MODE_OK;
+    m->type = M_T_BUILTIN;
+    m->HDisplay  = cx;
+    m->HSyncStart = m->HDisplay + 2;
+    m->HSyncEnd = m->HDisplay + 4;
+    m->HTotal = m->HDisplay + 6;
+    m->VDisplay = cy;
+    m->VSyncStart = m->VDisplay + 2;
+    m->VSyncEnd = m->VDisplay + 4;
+    m->VTotal = m->VDisplay + 6;
+    m->Clock = m->HTotal * m->VTotal * 60 / 1000; /* kHz */ 
+    
+    m->next = 0;
+    m->prev = 0;
+    if (!modes) return m;
+    
+    /* Add to existing list */
+    for (last = modes; last->next != 0; last = last->next) {};
+    m->prev = last;
+    last->next = m;
+    return modes;
 }
 
 static DisplayModePtr
 vnc_output_get_modes(xf86OutputPtr output)
 {
-  DisplayModePtr m = 0;
-  m = add_mode(m, 1024, 768);
-  return m;
+    DisplayModePtr m = 0;
+    m = add_mode(m, 1024, 768);
+    return m;
 }
 
 static void
@@ -412,10 +402,10 @@ VNCProbe(DriverPtr drv, int flags)
     return foundScreen;
 }
 
-# define RETURN \
-    { VNCFreeRec(pScrn);\
-			    return FALSE;\
-					     }
+# define RETURN					\
+    { VNCFreeRec(pScrn);			\
+	return FALSE;				\
+    }
 
 /* Mandatory */
 Bool
@@ -537,18 +527,18 @@ VNCPreInit(ScrnInfoPtr pScrn, int flags)
     xf86CrtcConfigInit(pScrn, &vnc_xf86crtc_config_funcs);
 
     for (i=0; i<dPtr->numOutputs; ++i) {
-      crtc[i] = xf86CrtcCreate(pScrn, &vnc_crtc_funcs);
-      crtc[i]->driver_private = (void *)(uintptr_t)i;
-
-      char outputName[256];
-      snprintf(outputName, sizeof(outputName), "vnc-%u", i);
-      output[i] = xf86OutputCreate (pScrn, &vnc_output_funcs, outputName);
-
-      xf86OutputUseScreenMonitor(output[i], TRUE);
-
-      output[i]->possible_crtcs = 1 << i;
-      output[i]->possible_clones = 0;
-      output[i]->driver_private = (void *)(uintptr_t)i;
+	crtc[i] = xf86CrtcCreate(pScrn, &vnc_crtc_funcs);
+	crtc[i]->driver_private = (void *)(uintptr_t)i;
+	
+	char outputName[256];
+	snprintf(outputName, sizeof(outputName), "vnc-%u", i);
+	output[i] = xf86OutputCreate (pScrn, &vnc_output_funcs, outputName);
+	
+	xf86OutputUseScreenMonitor(output[i], TRUE);
+	
+	output[i]->possible_crtcs = 1 << i;
+	output[i]->possible_clones = 0;
+	output[i]->driver_private = (void *)(uintptr_t)i;
     }
 
     xf86CrtcSetSizeRange(pScrn, 256, 256, VNC_MAX_WIDTH, VNC_MAX_HEIGHT);
@@ -564,8 +554,8 @@ VNCPreInit(ScrnInfoPtr pScrn, int flags)
     pScrn->currentMode = pScrn->modes;
 
     for (i=0; i<dPtr->numOutputs; ++i) {
-      /* Set default mode in CRTC */
-      crtc[i]->funcs->set_mode_major(crtc[i], pScrn->currentMode, RR_Rotate_0, 0, 0);
+	/* Set default mode in CRTC */
+	crtc[i]->funcs->set_mode_major(crtc[i], pScrn->currentMode, RR_Rotate_0, 0, 0);
     }
 
     /* We have no contiguous physical fb in physical memory */
@@ -573,12 +563,12 @@ VNCPreInit(ScrnInfoPtr pScrn, int flags)
     pScrn->fbOffset = 0;
 
     if (xf86LoadSubModule(pScrn, "fb") == NULL) {
-      return FALSE;
+	return FALSE;
     }
 
     if (!dPtr->swCursor) {
-      if (!xf86LoadSubModule(pScrn, "ramdac"))
-	return FALSE;
+	if (!xf86LoadSubModule(pScrn, "ramdac"))
+	    return FALSE;
     }
     
     return TRUE;
@@ -844,9 +834,9 @@ VNCCreateWindow(WindowPtr pWin)
                                       XA_STRING, 8, PropModeReplace,
                                       (int)strlen(VERSION), (pointer)VERSION, FALSE);
 	if( ret != Success)
-		ErrorF("Could not set VFB root window property");
+	    ErrorF("Could not set VNC_DRV_VERSION root window property");
         dPtr->prop = TRUE;
-
+	
 	return TRUE;
     }
     return TRUE;
