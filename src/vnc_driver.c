@@ -4,6 +4,11 @@
  * This code is based on the X.Org dummy video driver with the following copyrights:
  *
  * Copyright 2002, SuSE Linux AG, Author: Egbert Eich
+ * 
+ * And also incorporates changes from https://github.com/drinkcat/xf86-video-dummy/
+ * with the following copyrights:
+ *
+ * Copyright 2014, Nicolas Boichat
  */
 
 #ifdef HAVE_CONFIG_H

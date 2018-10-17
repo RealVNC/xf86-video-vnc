@@ -7,3 +7,7 @@ The master development code repository can be found at:
 This code is based on the X.Org dummy video driver, which can be found at:
 
         https://gitlab.freedesktop.org/xorg/driver/xf86-video-dummy
+
+And also incorporates changes from Nicholas Boichat, which can be found at:
+
+    	https://github.com/drinkcat/xf86-video-dummy/
