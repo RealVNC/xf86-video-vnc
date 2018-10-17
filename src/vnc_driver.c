@@ -432,7 +432,8 @@ VNCPreInit(ScrnInfoPtr pScrn, int flags)
     pScrn->chipset = (char *)xf86TokenToString(VNCChipsets,
 					       VNC_CHIP);
 
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Chipset is a VNC\n");
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "VNC virtual framebuffer driver version " 
+	       VERSION " built on " __DATE__ " " __TIME__ "\n");
     
     pScrn->monitor = pScrn->confScreen->monitor;
 
