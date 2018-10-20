@@ -1,4 +1,9 @@
-xf86-video-vnc - VNC virtual frame buffer driver for the Xorg X server
+xf86-video-vnc - VNC virtual framebuffer driver for the Xorg X server
+
+The buildAndInstall script is intended to simplify building and installing this
+driver on most common Linux systems. This should be invoked via sudo:
+
+        sudo ./buildAndInstall
 
 The master development code repository can be found at:
 
