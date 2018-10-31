@@ -179,8 +179,9 @@ size_valid(ScrnInfoPtr pScrn, int width, int height)
 static void*
 realloc_fb(ScrnInfoPtr pScrn, void* current)
 {
-    int fbBytes = pScrn->virtualX * pScrn->virtualY * pScrn->bitsPerPixel / 8;
-    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Setting fb to %d x %d (%d B)\n",
+    long int fbBytes = (long int)pScrn->virtualX * (long int)pScrn->virtualY * 
+        (long int)pScrn->bitsPerPixel / 8;
+    xf86DrvMsg(pScrn->scrnIndex, X_INFO, "Setting fb to %d x %d (%ld B)\n",
 	       pScrn->virtualX, pScrn->virtualY, fbBytes);
     void* pixels = current ? realloc(current, fbBytes) : malloc(fbBytes);
     if (!pixels)
