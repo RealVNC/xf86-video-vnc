@@ -78,11 +78,11 @@ echo "Xorg driver path: ${DRV_INSTALL_PATH}"
 info "Ensuring build dependencies are met"
 
 if command -v yum >/dev/null 2>&1; then
-    BUILD_DEPS="autoconf automake libtool xorg-x11-server-devel"
+    BUILD_DEPS="autoconf automake libtool pkgconfig xorg-x11-server-devel xorg-x11-proto-devel"
     run yum -y install ${BUILD_DEPS}
 
 elif command -v apt-get >/dev/null 2>&1; then
-    BUILD_DEPS="autoconf automake libtool xserver-xorg-dev"  
+    BUILD_DEPS="autoconf automake libtool pkg-config xserver-xorg-dev xutils-dev x11proto-randr-dev x11proto-render-dev"
     run apt-get -y install ${BUILD_DEPS}
 fi
 

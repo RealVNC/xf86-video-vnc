@@ -1,13 +1,8 @@
 xf86-video-vnc - VNC virtual framebuffer driver for the Xorg X server
 
-The buildAndInstall script is intended to simplify building and installing this
-driver on most common Linux systems. This should be invoked via sudo:
-
-        sudo ./buildAndInstall
-
 The master development code repository can be found at:
 
-    	<TODO: link to our GitHub repo for this>
+        https://github.com/RealVNC/xf86-video-vnc
 
 This code is based on the X.Org dummy video driver, which can be found at:
 
@@ -15,4 +10,83 @@ This code is based on the X.Org dummy video driver, which can be found at:
 
 And also incorporates changes from Nicholas Boichat, which can be found at:
 
-    	https://github.com/drinkcat/xf86-video-dummy/
+        https://github.com/drinkcat/xf86-video-dummy/
+
+
+## Automatic build instructions
+
+The buildAndInstall script is intended to simplify building and installing this
+driver on most common Linux systems. This should be invoked via sudo:
+
+        $ sudo ./buildAndInstall
+
+
+## Manual build instructions 
+
+If you encounter problems using the supplied buildAndInstall script, the 
+following manual instructions can be used to build and install the driver:
+
+Ensure the required dependencies are installed on the system:
+* C compiler
+* GNU autoconf, automake and libtool
+* pkg-config
+* X server development packages:
+  * on RHEL-based systems: xorg-x11-server-devel, xorg-x11-proto-devel
+  * on Debian-based systems: xserver-xorg-dev, xutils-dev, x11proto-randr-dev, x11proto-render-dev
+
+Configure and build the driver as follows:
+
+        $ ./autogen.sh --disable-static
+        $ make
+
+Assuming the build is successful, the driver will be output to 
+src/.libs/vnc_drv.so
+
+Locate your Xorg driver directory, which is typically:
+* /lib64/xorg/modules/drivers/ on 64 bit RHEL-based systems or 
+* /usr/lib/xorg/modules/drivers/ on Debian-based systems
+
+Then install the driver to this directory with:
+
+        $ sudo install -vbs src/.libs/vnc_drv.so <XORG_DRIVER_DIR>
+
+
+## Configuration
+
+We recommend ensuring you have the latest version of VNC Connect installed,
+which is available to download from:
+https://www.realvnc.com/en/connect/download/vnc/
+Note: If not using the latest version, the very minimum version required is 
+6.2.0, which is the first version to support SystemXorg virtual mode.
+
+Make sure SystemXorg virtual mode is enabled with
+
+        $ vncinitconfig -enable-system-xorg
+
+Running this command as root will enable it for all users on the machine, or
+run without root privileges to enable just for the current user.
+
+Copy the updated vncserver-virtual.conf from this repository to /etc/X11/
+
+
+## Usage
+
+Start a virtual mode session as normal, either via the vncserver-virtual 
+command or by connecting via the virtual mode daemon (vncserver-virtuald).
+
+The server will start with a single display mode (1024x768). New modes can be
+made available via the xrandr command. first using "cvt" to output the 
+modelines for the required modes, creating the mode and adding it to the 
+output (vnc-0). For example, the following defines the mode 1920x1080:
+
+        $ cvt 1920 1080
+        # 1920x1080 59.96 Hz (CVT 2.07M9) hsync: 67.16 kHz; pclk: 173.00 MHz
+        Modeline "1920x1080_60.00"  173.00  1920 2048 2248 2576  1080 1083 1088 1120 -hsync +vsync
+
+        $ xrandr --newmode "1920x1080_60.00"  173.00  1920 2048 2248 2576  1080 1083 1088 1120 -hsync +vsync
+        $ xrandr --addmode vnc-0 1920x1080_60.00
+
+Swtiching to this new mode can then be done using your desktop environment's
+display settings app, or by xrandr directly as follows:
+
+        $ xrandr --output vnc-0 --mode 1920x1080_60.00
