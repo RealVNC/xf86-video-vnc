@@ -25,7 +25,7 @@ confirm()
 echo
 echo "This script will attempt to build and install the VNC virtual framebuffer driver for the Xorg server on your system."
 
-if [ -n "$1" ] && [ "$1" -eq "automated" ]; then
+if [ -n "$1" ] && [ "$1" = "automated" ]; then
     : // no prompt
 else
     confirm "Do you wish to continue? [y/n]:" || exit 0
