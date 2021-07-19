@@ -24,7 +24,12 @@ confirm()
 
 echo
 echo "This script will attempt to build and install the VNC virtual framebuffer driver for the Xorg server on your system."
-confirm "Do you wish to continue? [y/n]:" || exit 0
+
+if [ -n "$1" ] && [ "$1" = "automated" ]; then
+    : // no prompt
+else
+    confirm "Do you wish to continue? [y/n]:" || exit 0
+fi
 echo
 
 # Start redirecting stdout and stderr to the log file
@@ -62,7 +67,7 @@ run()
 info "Checking system"
 
 ARCH=`uname -m`
-if [ "${ARCH}" = "x86_64" -a -d /usr/lib64 ]; then
+if [ "${ARCH}" = "x86_64" -a -d /usr/lib64/xorg ]; then
     LIBDIR="lib64"
 else
     LIBDIR="lib"
@@ -78,11 +83,22 @@ echo "Xorg driver path: ${DRV_INSTALL_PATH}"
 info "Ensuring build dependencies are met"
 
 if command -v yum >/dev/null 2>&1; then
-    BUILD_DEPS="autoconf automake libtool pkgconfig xorg-x11-server-devel xorg-x11-proto-devel"
+    releaseinfo=""
+    if [ -f "/etc/centos-release" ]; then
+        releaseinfo="/etc/centos-release"
+    elif [ -f "/etc/redhat-release" ]; then
+        releaseinfo="/etc/redhat-release"
+    fi
+    
+    majorversion="$(cat $releaseinfo | tr -dc '0-9.' | cut -f1 -d'.')"
+    if [ "$releaseinfo" = "/etc/centos-release" ] && [ "$majorversion" -ge 8 ]; then
+        run yum config-manager --set-enabled powertools
+    fi
+    
+    BUILD_DEPS="autoconf automake libtool make pkgconfig xorg-x11-server-devel xorg-x11-proto-devel"
     run yum -y install ${BUILD_DEPS}
-
 elif command -v apt-get >/dev/null 2>&1; then
-    BUILD_DEPS="autoconf automake libtool pkg-config xserver-xorg-dev xutils-dev x11proto-randr-dev x11proto-render-dev"
+    BUILD_DEPS="autoconf automake libtool make pkg-config xserver-xorg-dev xutils-dev x11proto-randr-dev x11proto-render-dev"
     run apt-get -y install ${BUILD_DEPS}
 fi
 
